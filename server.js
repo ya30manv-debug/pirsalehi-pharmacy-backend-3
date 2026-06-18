@@ -55,14 +55,29 @@ app.get('/api/debug', (req, res) => {
 
 // ثبت سفارش جدید (وقتی کاربر در مینی‌اپ نسخه را می‌فرستد)
 app.post('/api/orders', (req, res) => {
-  const { name, forWhom, nid, phone, type, track, baseIns, suppIns, note, telegramUserId } = req.body;
-  if (!name || !phone) {
-    return res.status(400).json({ ok: false, error: 'نام و شماره تماس الزامی است' });
+  const { name, forWhom, nid, phone, type, track, baseIns, suppIns, note, telegramUserId,
+          items, fee, status, total, deliver, addr } = req.body;
+  if (!name) {
+    return res.status(400).json({ ok: false, error: 'نام الزامی است' });
   }
   const order = db.createOrder({
-    name, forWhom, nid, phone, type, track, baseIns, suppIns, note, telegramUserId
+    name, forWhom, nid, phone, type, track, baseIns, suppIns, note, telegramUserId,
+    // این چندتا اختیاری‌اند: نسخه‌دار خالی می‌فرستد (چون هنوز اقلام معلوم نیست)،
+    // ولی OTC/کالا همه را همان لحظه کامل می‌فرستد چون از قبل قیمت معلوم است
+    ...(items !== undefined ? { items } : {}),
+    ...(fee !== undefined ? { fee } : {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(total !== undefined ? { total } : {}),
+    ...(deliver !== undefined ? { deliver } : {}),
+    ...(addr !== undefined ? { addr } : {})
   });
   res.json({ ok: true, order });
+});
+
+// گرفتن همهٔ سفارش‌های یک کاربر تلگرام خاص (برای صفحهٔ «سفارش‌های من» در مینی‌اپ)
+app.get('/api/orders/by-user/:telegramUserId', (req, res) => {
+  const orders = db.getOrdersByUser(req.params.telegramUserId);
+  res.json({ ok: true, orders });
 });
 
 // گرفتن وضعیت یک سفارش خاص (مینی‌اپ هر چند ثانیه این را می‌پرسد تا بفهمد
@@ -88,7 +103,7 @@ app.post('/api/orders/:id/confirm-items', (req, res) => {
 // کاربر روش تحویل را انتخاب می‌کند (حضوری یا ارسال)
 app.post('/api/orders/:id/delivery', (req, res) => {
   const { deliver, addr } = req.body;
-  const order = db.updateOrder(req.params.id, { deliver, addr });
+  const order = db.updateOrder(req.params.id, { deliver, addr, deliveryStage: 0 });
   if (!order) return res.status(404).json({ ok: false, error: 'سفارش پیدا نشد' });
   res.json({ ok: true, order });
 });
@@ -177,6 +192,28 @@ app.post('/api/pharmacist/orders/:id/reject', (req, res) => {
   const order = db.updateOrder(req.params.id, { status: 'rejected', rejectReason: reason });
   if (!order) return res.status(404).json({ ok: false, error: 'سفارش پیدا نشد' });
   sendTelegramMessage(order.telegramUserId, '⚠️ نسخهٔ شما توسط داروخانه رد شد: ' + (reason || 'لطفاً جزئیات را در اپ ببینید.'));
+  res.json({ ok: true, order });
+});
+
+// حذف کامل یک سفارش — فقط برای کارهای مدیریتی (مثلاً پاک‌کردن سفارش آزمایشی/تستی)
+app.delete('/api/pharmacist/orders/:id', (req, res) => {
+  const removed = db.deleteOrder(req.params.id);
+  res.json({ ok: true, removed });
+});
+
+// داروساز مرحلهٔ تحویل را پیش می‌برد: ۰=ثبت شد، ۱=آماده‌سازی شد، ۲=تحویل پیک شد، ۳=در مسیر، ۴=تحویل شد
+// (برای تحویل حضوری فقط ۰ و ۱ و ۲ معنا دارد: ثبت شد → آماده‌سازی شد → آمادهٔ تحویل حضوری)
+app.post('/api/pharmacist/orders/:id/delivery-stage', (req, res) => {
+  const { stage } = req.body;
+  const order = db.updateOrder(req.params.id, { deliveryStage: stage });
+  if (!order) return res.status(404).json({ ok: false, error: 'سفارش پیدا نشد' });
+  const STAGE_MSG = {
+    1: '🧪 داروساز در حال آماده‌سازی سفارش شماست.',
+    2: '📦 سفارش شما تحویل پیک شد.',
+    3: '🛵 پیک به‌سمت آدرس شما حرکت کرد.',
+    4: '✅ سفارش شما تحویل داده شد.'
+  };
+  if (STAGE_MSG[stage]) sendTelegramMessage(order.telegramUserId, STAGE_MSG[stage]);
   res.json({ ok: true, order });
 });
 
