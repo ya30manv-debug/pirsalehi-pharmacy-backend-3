@@ -6,12 +6,31 @@
 const fs = require('fs');
 const path = require('path');
 
-const DB_FILE = path.join(__dirname, 'data', 'db.json');
+const DATA_DIR = path.join(__dirname, 'data');
+const DB_FILE = path.join(DATA_DIR, 'db.json');
+
+// اگر پوشهٔ data وجود نداشت بسازش (مثلاً روی سروری مثل Render که فقط
+// فایل‌های گیت‌هاب را کپی می‌کند و پوشه‌های خالی در گیت ذخیره نمی‌شوند)
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
 
 // اگر فایل دیتابیس وجود نداشت، یکی خالی بساز
 function ensureDb() {
+  ensureDataDir();
   if (!fs.existsSync(DB_FILE)) {
-    const empty = { orders: [], chats: [], nextOrderSeq: 88421 };
+    const seedOrders = [
+      { id: 'PSP-88421', name: 'اکبر اکبری', forWhom: 'پدر (حسن اکبری)', nid: '0089123456', phone: '09123456789',
+        type: 'erx', track: '884210', baseIns: 'تأمین اجتماعی', suppIns: 'بیمهٔ بانک ملی',
+        note: 'لطفاً برند ایرانی انسولین در صورت موجود بودن.',
+        status: 'wait', fee: 120000, items: [], deliver: null, createdAt: new Date().toISOString() },
+      { id: 'PSP-88419', name: 'مریم رضایی', forWhom: 'خودم', nid: '0011223344', phone: '09351112233',
+        type: 'paper', track: '', baseIns: 'بیمهٔ سلامت ایران (خدمات درمانی)', suppIns: '', note: '',
+        status: 'wait', fee: 120000, items: [], deliver: 'pickup', createdAt: new Date().toISOString() }
+    ];
+    const empty = { orders: seedOrders, chats: [], nextOrderSeq: 88422 };
     fs.writeFileSync(DB_FILE, JSON.stringify(empty, null, 2));
   }
 }
