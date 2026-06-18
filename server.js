@@ -13,6 +13,7 @@ const cors = require('cors');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const db = require('./db');
+const { startBot, sendTelegramMessage } = require('./bot');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -146,7 +147,7 @@ app.post('/api/pharmacist/parse-excel', upload.single('file'), (req, res) => {
 app.post('/api/pharmacist/orders/:id/send-items', (req, res) => {
   const order = db.updateOrder(req.params.id, { status: 'items_sent' });
   if (!order) return res.status(404).json({ ok: false, error: 'سفارش پیدا نشد' });
-  // در فاز بعد: اینجا یک پیام تلگرامی هم به کاربر می‌فرستیم
+  sendTelegramMessage(order.telegramUserId, '✅ داروساز اقلام نسخهٔ شما را وارد کرد. لطفاً برای بررسی و تأیید وارد اپ شوید.');
   res.json({ ok: true, order });
 });
 
@@ -166,6 +167,7 @@ app.post('/api/pharmacist/orders/:id/approve', (req, res) => {
   const goods = current.items.filter(i => i.avail !== false).reduce((s, i) => s + i.price * i.qty, 0);
   const total = goods + (fee != null ? fee : current.fee);
   const order = db.updateOrder(req.params.id, { fee: fee != null ? fee : current.fee, total, status: 'done' });
+  sendTelegramMessage(order.telegramUserId, '💰 قیمت نهایی سفارش شما آماده شد. برای پرداخت وارد اپ شوید.');
   res.json({ ok: true, order });
 });
 
@@ -174,6 +176,7 @@ app.post('/api/pharmacist/orders/:id/reject', (req, res) => {
   const { reason } = req.body;
   const order = db.updateOrder(req.params.id, { status: 'rejected', rejectReason: reason });
   if (!order) return res.status(404).json({ ok: false, error: 'سفارش پیدا نشد' });
+  sendTelegramMessage(order.telegramUserId, '⚠️ نسخهٔ شما توسط داروخانه رد شد: ' + (reason || 'لطفاً جزئیات را در اپ ببینید.'));
   res.json({ ok: true, order });
 });
 
@@ -248,4 +251,5 @@ function parseKaraRows(rows) {
 
 app.listen(PORT, () => {
   console.log(`✅ سرور روی پورت ${PORT} روشن شد`);
+  startBot(); // بات تلگرام را هم همین‌جا روشن می‌کنیم (اگر BOT_TOKEN تنظیم شده باشد)
 });
