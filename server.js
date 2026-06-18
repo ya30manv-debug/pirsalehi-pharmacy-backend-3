@@ -28,6 +28,26 @@ app.get('/', (req, res) => {
   res.json({ ok: true, message: 'سرور داروخانهٔ دکتر پیرصالحی روشن است ✅' });
 });
 
+// مسیر تشخیصی موقت — برای پیدا کردن علت دقیق خطای 500
+// (بعداً که مشکل حل شد، این مسیر را حذف می‌کنیم)
+app.get('/api/debug', (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  const info = { cwd: process.cwd(), dirname: __dirname };
+  try{
+    info.dataDirExists = fs.existsSync(path.join(__dirname,'data'));
+    info.dbFileExists = fs.existsSync(path.join(__dirname,'data','db.json'));
+    info.writableTest = (()=>{ try{ fs.writeFileSync(path.join(__dirname,'data','__test.tmp'),'x'); fs.unlinkSync(path.join(__dirname,'data','__test.tmp')); return true; }catch(e){ return 'FAILED: '+e.message; } })();
+    const orders = db.getOrders();
+    info.ordersOk = true;
+    info.ordersCount = orders.length;
+  }catch(e){
+    info.error = e.message;
+    info.stack = e.stack;
+  }
+  res.json(info);
+});
+
 // =================================================================
 // بخش ۱ — مسیرهایی که مینی‌اپ کاربر صدا می‌زند
 // =================================================================
@@ -81,10 +101,29 @@ app.get('/api/pharmacist/orders', (req, res) => {
   res.json({ ok: true, orders: db.getOrders() });
 });
 
+// گرفتن جزئیات یک سفارش خاص از دید داروساز
+app.get('/api/pharmacist/orders/:id', (req, res) => {
+  const order = db.getOrder(req.params.id);
+  if (!order) return res.status(404).json({ ok: false, error: 'سفارش پیدا نشد' });
+  res.json({ ok: true, order });
+});
+
 // داروساز اقلام را وارد می‌کند (دستی یا از اکسل) و ذخیره می‌کند
 app.put('/api/pharmacist/orders/:id/items', (req, res) => {
   const { items } = req.body;
   const order = db.updateOrder(req.params.id, { items, status: 'review' });
+  if (!order) return res.status(404).json({ ok: false, error: 'سفارش پیدا نشد' });
+  res.json({ ok: true, order });
+});
+
+// ذخیرهٔ سریع تغییرات روی اقلام/حق‌فنی، بدون تغییر وضعیت سفارش
+// (پنل هر بار که کاربر تعداد/قیمت/یخچالی/موجود بودن را عوض می‌کند، این را صدا می‌زند)
+app.patch('/api/pharmacist/orders/:id', (req, res) => {
+  const { items, fee } = req.body;
+  const patch = {};
+  if (items !== undefined) patch.items = items;
+  if (fee !== undefined) patch.fee = fee;
+  const order = db.updateOrder(req.params.id, patch);
   if (!order) return res.status(404).json({ ok: false, error: 'سفارش پیدا نشد' });
   res.json({ ok: true, order });
 });
@@ -108,6 +147,14 @@ app.post('/api/pharmacist/orders/:id/send-items', (req, res) => {
   const order = db.updateOrder(req.params.id, { status: 'items_sent' });
   if (!order) return res.status(404).json({ ok: false, error: 'سفارش پیدا نشد' });
   // در فاز بعد: اینجا یک پیام تلگرامی هم به کاربر می‌فرستیم
+  res.json({ ok: true, order });
+});
+
+// دکمهٔ موقت «شبیه‌سازی تأیید کاربر» در پنل از همین مسیر استفاده می‌کند
+// (تا وقتی مینی‌اپ واقعی وصل شود و خودش confirm-items را صدا بزند)
+app.post('/api/pharmacist/orders/:id/simulate-confirm', (req, res) => {
+  const order = db.updateOrder(req.params.id, { status: 'items_confirmed' });
+  if (!order) return res.status(404).json({ ok: false, error: 'سفارش پیدا نشد' });
   res.json({ ok: true, order });
 });
 
@@ -136,6 +183,13 @@ app.post('/api/pharmacist/orders/:id/reject', (req, res) => {
 
 app.get('/api/chats', (req, res) => {
   res.json({ ok: true, chats: db.getChats() });
+});
+
+app.get('/api/chats/:telegramUserId', (req, res) => {
+  const chats = db.getChats();
+  const chat = chats.find(c => c.telegramUserId === req.params.telegramUserId);
+  if (!chat) return res.status(404).json({ ok: false, error: 'مکالمه پیدا نشد' });
+  res.json({ ok: true, chat });
 });
 
 app.post('/api/chats/:telegramUserId/messages', (req, res) => {
