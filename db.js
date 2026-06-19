@@ -21,16 +21,7 @@ function ensureDataDir() {
 function ensureDb() {
   ensureDataDir();
   if (!fs.existsSync(DB_FILE)) {
-    const seedOrders = [
-      { id: 'PSP-88421', name: 'اکبر اکبری', forWhom: 'پدر (حسن اکبری)', nid: '0089123456', phone: '09123456789',
-        type: 'erx', track: '884210', baseIns: 'تأمین اجتماعی', suppIns: 'بیمهٔ بانک ملی',
-        note: 'لطفاً برند ایرانی انسولین در صورت موجود بودن.',
-        status: 'wait', fee: 120000, items: [], deliver: null, createdAt: new Date().toISOString() },
-      { id: 'PSP-88419', name: 'مریم رضایی', forWhom: 'خودم', nid: '0011223344', phone: '09351112233',
-        type: 'paper', track: '', baseIns: 'بیمهٔ سلامت ایران (خدمات درمانی)', suppIns: '', note: '',
-        status: 'wait', fee: 120000, items: [], deliver: 'pickup', createdAt: new Date().toISOString() }
-    ];
-    const empty = { orders: seedOrders, chats: [], nextOrderSeq: 88422 };
+    const empty = { orders: [], chats: [], nextOrderSeq: 88421 };
     fs.writeFileSync(DB_FILE, JSON.stringify(empty, null, 2));
   }
 }
@@ -66,6 +57,11 @@ function createOrder(order) {
 
 function getOrders() {
   return readDb().orders;
+}
+
+// سفارش‌های یک کاربر تلگرام خاص — همان چیزی که صفحهٔ «سفارش‌های من» در مینی‌اپ لازم دارد
+function getOrdersByUser(telegramUserId) {
+  return readDb().orders.filter(o => o.telegramUserId === telegramUserId);
 }
 
 function getOrder(id) {
@@ -110,7 +106,15 @@ function addChatMessage(telegramUserId, from, text) {
   return chat;
 }
 
+function deleteOrder(id) {
+  const db = readDb();
+  const before = db.orders.length;
+  db.orders = db.orders.filter(o => o.id !== id);
+  writeDb(db);
+  return before !== db.orders.length; // true یعنی واقعاً چیزی حذف شد
+}
+
 module.exports = {
-  createOrder, getOrders, getOrder, updateOrder,
+  createOrder, getOrders, getOrdersByUser, getOrder, updateOrder, deleteOrder,
   getChats, getOrCreateChat, addChatMessage
 };
